@@ -96,7 +96,8 @@
   (fn [db [_ username message chat-room]]
     (m/conj-in! fb-root [(-> chat-room (str/lower-case) (keyword))
                          :messages]
-                [username message])
+                {:username username
+                 :message message})
     db))
 
 ;; -- View Components -------
@@ -121,6 +122,13 @@
               :on-change #(reset! message (-> % .-target .-value))}]
      [:button {:type "submit"} "Send"]]))
 
+(defn show-messages []
+  [:div#messages
+   (for [[[k v] index] (map vector (take-last 30 @messages) (range))]
+     ^{:key (str "message-" index)}
+     (let [{:keys [username message]} v]
+       [:div [:span.username username] ": " [:span.message message]]))])
+
 ;; -- Views -----------------
 
 (defn on-going-chat []
@@ -128,10 +136,7 @@
    [:label "Your username: "]
    [username-input]
 
-   [:div#messages
-    (for [[message index] (map vector (take-last 30 @messages) (range))]
-      ^{:key (str "message-" index)}
-      [:div [:span.username (first message) ": "] [:span.message (second message)]])]
+   [show-messages]
 
    [message-form]])
 
