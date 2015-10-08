@@ -6,7 +6,7 @@
                  [org.clojure/core.async "0.1.346.0-17112a-alpha"]
 
                  [reagent "0.5.1"]
-                 [reagent-forms "0.5.12"]
+                 [re-frame "0.4.1"]
                  [reagent-utils "0.1.5"]
                  [secretary "1.2.3"]
                  [cljsjs/firebase "2.2.7-1"]

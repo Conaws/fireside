@@ -6,132 +6,177 @@
             [reagent.core :as reagent]
             [reagent.session :as session]
             [secretary.core :as secretary :include-macros true]
+            [re-frame.core :as rf :refer [dispatch
+                                          dispatch-sync
+                                          register-handler
+                                          register-sub
+                                          subscribe]]
             [matchbox.async :as ma]
             [matchbox.core :as m])
-  (:require-macros [cljs.core.async.macros :refer [go go-loop]])
+  (:require-macros [reagent.ratom :refer [reaction]]
+                   [cljs.core.async.macros :refer [go-loop]])
   (:import goog.History))
-
-;; -----------------------------
-;; Global Data
 
 ;; -- REPLACE with your own DB location ---------
 (def firebase-io-root "https://shining-torch-2145.firebaseIO.com")
 ;; ----------------------------------------------
 
-(defonce show-state? (reagent/atom true))
-(defonce username (reagent/atom "username"))
-(defonce chat-room (reagent/atom nil))
+;; Connection to Firebase
+(defonce fb-root (m/connect firebase-io-root))
 
-(defonce fb-messages (atom nil))
-(defonce messages (reagent/atom []))
+(def initial-state
+  {:chat-room nil
+   :messages []
+   :username (str "Guest" (rand-int 100))})
 
-(defn random-four-characters []
+;; -- Helpers ---------------
+
+(defn- random-four-characters []
   (->> (repeatedly #(rand-nth ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"]))
        (take 4)
        (str/join)
        (str/upper-case)))
 
-;; -----------------------------
-;; Firebase helpers
+;; -- Subscriptions ---------
 
-(defn bind-to-ratom [ratom ref & [korks]]
-  (let [ch (ma/listen-to< ref korks :value)]
-    (go-loop [[key val] (<! ch)]
-      (reset! ratom val)
-      (recur (<! ch)))))
+(register-sub
+  :username-input
+  (fn [db _]
+    (reaction (:username @db))))
 
-(defn firebase-swap! [fb-ref f & args]
-  (apply m/swap! fb-ref f args))
+(register-sub
+  :current-chat-room
+  (fn [db _]
+    (reaction (:chat-room @db))))
 
-;; ------------------
-;; logic
+(register-sub
+  :chat-room-messages
+  (fn [db _]
+    (reaction (vals (:messages @db)))))
 
-(defn join-room [id]
-  (reset! chat-room id)
-  (let [fb-root (m/connect firebase-io-root)]
-    (let [fb-item (m/get-in fb-root [(str/lower-case id) :messages])]
-      (reset! fb-messages fb-item)
-      (bind-to-ratom messages fb-item))))
+;; -- Event Handlers --------
 
-;; -------------------------
-;; Views
+(register-handler
+  :initialize
+  (fn [db _]
+    (merge db initial-state)))
 
-(defn ^:export toggle-showing-state! []
-  (swap! show-state? not))
+(register-handler
+  :set-username-input
+  (fn [db [_ value]]
+    (assoc db :username value)))
 
-(defn text-input [value]
-  [:input {:type "text"
-           :value @value
-           :on-change #(reset! value (-> % .-target .-value))}])
+(register-handler
+  :room-update
+  (fn [db [_ v]]
+    (assoc db :messages v)))
+
+(register-handler
+  :join-chat-room
+  (fn [db [_ room-id]]
+    ;; listen to chat room on firebase
+    (let [id  (-> room-id (str/lower-case) (keyword))]
+      (-> fb-root
+          (m/get-in [id :messages])
+          (m/take-last 30)
+          (m/listen-to :value
+                       (fn [[_ v]] (println v) (dispatch [:room-update v])))))
+
+    ;; update current room id
+    (assoc db :chat-room room-id)))
+
+(register-handler
+  :send-message
+  (fn [db [_ username message chat-room]]
+    (m/conj-in! fb-root [(-> chat-room (str/lower-case) (keyword))
+                         :messages]
+                {:username username
+                 :message message})
+    db))
+
+;; -- View Components -------
+
+(defn username-input []
+  (let [username (subscribe [:username-input])]
+    [:input {:type "text"
+             :value @username
+             :on-change #(dispatch [:set-username-input (-> % .-target .-value)])}]))
+
+(defn message-form []
+  (let [message   (reagent/atom "")
+        username  (subscribe [:username-input])
+        chat-room (subscribe [:current-chat-room])]
+    [:form {:on-submit (fn [e]
+                         ;; prevent redirect
+                         (.preventDefault e)
+                         (dispatch-sync [:send-message @username @message @chat-room])
+                         ;; reset the form
+                         (.reset (.-target e)))}
+     [:input {:type "text"
+              :on-change #(reset! message (-> % .-target .-value))}]
+     [:button {:type "submit"} "Send"]]))
+
+(defn show-messages []
+  (let [messages (subscribe [:chat-room-messages])]
+    [:div#messages
+     (for [[{:keys [username message]} index] (map vector @messages (range))]
+       ^{:key (str "message-" index)}
+       [:div [:span.username username] ": " [:span.message message]])]))
+
+;; -- Views -----------------
 
 (defn on-going-chat []
   [:div
-   [:label "Your username:"]
-   [text-input username]
+   [:label "Your username: "]
+   [username-input]
 
-   [:div#messages
-    (for [[message index] (map vector (take-last 30 @messages) (range))]
-      ^{:key (str "message-" index)}
-      [:div [:span.username (first message) ": "] [:span.message (second message)]])]
+   [show-messages]
 
-   (let [users-message (reagent/atom "")]
-     [:form {:on-submit (fn [e]
-                          (.preventDefault e)
-                          (firebase-swap! @fb-messages conj [@username @users-message]))}
-      [text-input users-message]
-      [:button {:type "submit"} "Send"]])])
+   [message-form]])
 
 (defn join-room-view []
-  (let [this-room (atom (random-four-characters))
+  (let [this-room        (atom (random-four-characters))
         change-location #(set! (.-location js/window) (str "#/room/" @this-room))]
     [:div
-     [:p [:div
-          [:button {:on-click change-location
-                    :type "submit"}
-           "New Room"]]]
-
-     [:p [:div
-          [:input {:placeholder "Room Name"
-                   :type "text"
-                   :on-change #(reset! this-room (-> % .-target .-value))}]
-          [:button {:type "submit"
-                    :on-click change-location}
-           "Join Room"]]]]))
+     [:input {:placeholder "Room Name"
+              :type "text"
+              :on-change #(reset! this-room (-> % .-target .-value))}]
+     [:button {:type "submit"
+               :on-click change-location}
+      "Join Room"]
+     [:button {:on-click change-location
+               :type "submit"}
+      "Random Room"]]))
 
 (defn home-page []
-  [:div
-   [:div {:class "container"}
-    [:div {:class "page-header"}
-     [:h2 "Minimal Chat"]]
+  (let [chat-room (subscribe [:current-chat-room])
+        messages  (subscribe [:chat-room-messages])]
+    [:div
+     [:div.container
+      [:div.page-header
+       [:h2 "Minimal Chat"]]
 
-    (if @chat-room
-      [on-going-chat]
-      [join-room-view])
+      (if @chat-room
+        [on-going-chat]
+        [join-room-view])
 
-    (when @show-state?
-      [:div [:br] [:br] [:br] "STATE!!!!"
-       [:div "Messages: " (pr-str @messages)]])]])
+      [:div [:br] [:br] [:br]
+       "STATE!!!!"
+       [:div "Messages: " (pr-str @messages)]]]]))
 
 (defn current-page []
   [:div [(session/get :current-page)]])
 
-;; -------------------------
-;; Routes
-
-(secretary/set-config! :prefix "#")
+;; -- Routes and History ----
 
 (secretary/defroute "/" []
-  (reset! chat-room nil)
+  (dispatch [:exit-chat-room])
   (session/put! :current-page #'home-page))
 
-(secretary/defroute "/room/:id" {:as params}
-  (when (not= @chat-room (:id params))
-    (join-room (:id params)))
+(secretary/defroute "/room/:id" [id]
+  (dispatch [:join-chat-room id])
   (session/put! :current-page #'home-page))
 
-;; -------------------------
-;; History
-;; must be called after routes have been defined
 (defn hook-browser-navigation! []
   (doto (History.)
     (events/listen
@@ -142,7 +187,12 @@
 
 ;; -------------------------
 ;; Initialize app
+
 (defn init! []
   (hook-browser-navigation!)
+  (secretary/set-config! :prefix "#")
+  (dispatch-sync [:initialize])
 
+  ;; mount root
   (reagent/render-component [current-page] (.getElementById js/document "app")))
+
