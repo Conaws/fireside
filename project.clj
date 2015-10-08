@@ -1,30 +1,27 @@
 (defproject minimal-chat "0.1.0-SNAPSHOT"
   :source-paths ["src/clj" "src/cljs"]
 
-  :dependencies [[org.clojure/clojure "1.6.0"]
-                 [org.clojure/clojurescript "0.0-2913" :scope "provided"]
+  :dependencies [[org.clojure/clojure "1.7.0"]
+                 [org.clojure/clojurescript "1.7.122"]
                  [org.clojure/core.async "0.1.346.0-17112a-alpha"]
-                 [com.cognitect/transit-cljs "0.8.205"]
 
-                 [cljsjs/react "0.12.2-5"]
-                 [reagent "0.5.0-alpha3"]
-                 [reagent-forms "0.4.3"]
-                 [reagent-utils "0.1.2"]
-                 [secretary "1.2.1"]
-                 [cljsjs/firebase "2.1.2-1"]
-                 [sunog "0.0.4" :exclusions
-                  [org.apache.httpcomponents/httpclient]]
+                 [reagent "0.5.1"]
+                 [reagent-forms "0.5.12"]
+                 [reagent-utils "0.1.5"]
+                 [secretary "1.2.3"]
+                 [cljsjs/firebase "2.2.7-1"]
+                 [matchbox "0.0.8-SNAPSHOT"]
 
-                 [ring "1.3.2"]
-                 [ring/ring-defaults "0.1.3"]
-                 [prone "0.8.0"]
-                 [compojure "1.3.2"]
-                 [selmer "0.8.0"]
-                 [environ "1.0.0"]]
+                 [ring "1.4.0"]
+                 [ring/ring-defaults "0.1.5"]
+                 [prone "0.8.2"]
+                 [compojure "1.4.0"]
+                 [selmer "0.9.2"]
+                 [environ "1.0.1"]]
 
-  :plugins [[lein-cljsbuild "1.0.5"]
-            [lein-environ "1.0.0"]
-            [lein-ring "0.9.1"]]
+  :plugins [[lein-cljsbuild "1.1.0"]
+            [lein-environ "1.0.1"]
+            [lein-ring "0.9.7"]]
 
   :ring {:handler minimal-chat.handler/app
          :uberwar-name "minimal-chat.war"}
@@ -51,16 +48,16 @@
                                   :nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
 
                    :dependencies [[ring-mock "0.1.5"]
-                                  [ring/ring-devel "1.3.2"]
-                                  [leiningen "2.5.1"]
-                                  [figwheel "0.2.5"]
-                                  [weasel "0.6.0-SNAPSHOT"]
-                                  [com.cemerick/piggieback "0.1.6-SNAPSHOT"]
+                                  [ring/ring-devel "1.4.0"]
+                                  [leiningen "2.5.3"]
+                                  [figwheel "0.4.0"]
+                                  [weasel "0.7.0"]
+                                  [com.cemerick/piggieback "0.2.1"]
                                   [pjstadig/humane-test-output "0.7.0"]
                                   [com.cemerick/double-check "0.6.1"]]
 
                    :source-paths ["env/dev/clj"]
-                   :plugins [[lein-figwheel "0.2.5"]
+                   :plugins [[lein-figwheel "0.4.0"]
                              [com.cemerick/clojurescript.test "0.3.3"]]
 
                    :injections [(require 'pjstadig.humane-test-output)

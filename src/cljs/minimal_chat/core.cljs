@@ -1,16 +1,29 @@
 (ns minimal-chat.core
   (:require [cljs.core.async :refer [<!]]
             [clojure.string :as str]
-            [cognitect.transit :as t]
             [goog.events :as events]
             [goog.history.EventType :as EventType]
             [reagent.core :as reagent]
             [reagent.session :as session]
             [secretary.core :as secretary :include-macros true]
-            [sunog.async :as pa]
-            [sunog.core :as p])
+            [matchbox.async :as ma]
+            [matchbox.core :as m])
   (:require-macros [cljs.core.async.macros :refer [go go-loop]])
   (:import goog.History))
+
+;; -----------------------------
+;; Global Data
+
+;; -- REPLACE with your own DB location ---------
+(def firebase-io-root "https://shining-torch-2145.firebaseIO.com")
+;; ----------------------------------------------
+
+(defonce show-state? (reagent/atom true))
+(defonce username (reagent/atom "username"))
+(defonce chat-room (reagent/atom nil))
+
+(defonce fb-messages (atom nil))
+(defonce messages (reagent/atom []))
 
 (defn random-four-characters []
   (->> (repeatedly #(rand-nth ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"]))
@@ -22,60 +35,21 @@
 ;; Firebase helpers
 
 (defn bind-to-ratom [ratom ref & [korks]]
-  (let [ch (pa/listen-to< ref korks :value)]
+  (let [ch (ma/listen-to< ref korks :value)]
     (go-loop [[key val] (<! ch)]
       (reset! ratom val)
       (recur (<! ch)))))
 
 (defn firebase-swap! [fb-ref f & args]
-  (apply p/swap! fb-ref f args))
-
-;; Commented out code is useful if you want to store your data as
-;; transit. Sort of defeats some of Firebase's functionality, but oh
-;; well. 
-
-;; (def transit-reader (t/reader :json))
-;; (def transit-writer (t/writer :json))
-
-;; (defn bind-to-ratom [ratom ref & [korks]]
-;;   (let [ch (pa/listen-to< ref korks :value)]
-;;     (go-loop [[key val] (<! ch)]
-;;       (let [v (t/read transit-reader val)]
-;;         (reset! ratom v)
-;;         (recur (<! ch))))))
-
-;; (defn to-transit [x]
-;;   (t/write transit-writer x))
-
-;; (defn wrap-with-transit [f]
-;;   (fn [& args]
-;;     (let [x (t/read transit-reader (first args))
-;;           z (rest args)]
-;;       (t/write transit-writer (apply f x z)))))
-
-;; (defn firebase-swap! [fb-ref f & args]
-;;   (apply p/swap! fb-ref (wrap-with-transit f) args))
-
-
-;; -----------------------------
-;; Global Data
-
-(def firebase-io-root "<YOUR URL>")
-
-(defonce show-state? (reagent/atom true))
-(defonce username (reagent/atom "username"))
-(defonce chat-room (reagent/atom nil))
-
-(defonce fb-messages (atom nil))
-(defonce messages (reagent/atom []))
+  (apply m/swap! fb-ref f args))
 
 ;; ------------------
 ;; logic
 
 (defn join-room [id]
   (reset! chat-room id)
-  (let [fb-root (p/connect firebase-io-root)]
-    (let [fb-item (p/get-in fb-root [(str/lower-case id) :messages])]
+  (let [fb-root (m/connect firebase-io-root)]
+    (let [fb-item (m/get-in fb-root [(str/lower-case id) :messages])]
       (reset! fb-messages fb-item)
       (bind-to-ratom messages fb-item))))
 
