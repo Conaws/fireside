@@ -6,33 +6,32 @@
             [reagent.core :as reagent]
             [reagent.session :as session]
             [secretary.core :as secretary :include-macros true]
+            [re-frame.core :as rf :refer [dispatch
+                                          dispatch-sync
+                                          register-handler
+                                          register-sub
+                                          subscribe]]
             [matchbox.async :as ma]
             [matchbox.core :as m])
-  (:require-macros [cljs.core.async.macros :refer [go go-loop]])
+  (:require-macros [reagent.ratom :refer [reaction]]
+                   [cljs.core.async.macros :refer [go go-loop]])
   (:import goog.History))
-
-;; -----------------------------
-;; Global Data
 
 ;; -- REPLACE with your own DB location ---------
 (def firebase-io-root "https://shining-torch-2145.firebaseIO.com")
 ;; ----------------------------------------------
 
-(defonce show-state? (reagent/atom true))
-(defonce username (reagent/atom "username"))
+(def initial-state
+  {:chat-room nil
+   :messages []
+   :username (str "Guest" (rand-int 100))})
+
 (defonce chat-room (reagent/atom nil))
 
 (defonce fb-messages (atom nil))
 (defonce messages (reagent/atom []))
 
-(defn random-four-characters []
-  (->> (repeatedly #(rand-nth ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"]))
-       (take 4)
-       (str/join)
-       (str/upper-case)))
-
-;; -----------------------------
-;; Firebase helpers
+;; -- Firebase helpers ------
 
 (defn bind-to-ratom [ratom ref & [korks]]
   (let [ch (ma/listen-to< ref korks :value)]
@@ -43,8 +42,13 @@
 (defn firebase-swap! [fb-ref f & args]
   (apply m/swap! fb-ref f args))
 
-;; ------------------
-;; logic
+;; -- Helpers ---------------
+
+(defn- random-four-characters []
+  (->> (repeatedly #(rand-nth ["a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"]))
+       (take 4)
+       (str/join)
+       (str/upper-case)))
 
 (defn join-room [id]
   (reset! chat-room id)
@@ -53,33 +57,56 @@
       (reset! fb-messages fb-item)
       (bind-to-ratom messages fb-item))))
 
-;; -------------------------
-;; Views
+;; -- Subscriptions ---------
 
-(defn ^:export toggle-showing-state! []
-  (swap! show-state? not))
+(register-sub
+  :username-input
+  (fn [db _]
+    (reaction (:username @db))))
 
-(defn text-input [value]
-  [:input {:type "text"
-           :value @value
-           :on-change #(reset! value (-> % .-target .-value))}])
+;; -- Event Handlers --------
+
+(register-handler
+  :initialize
+  (fn [db _]
+    (merge db initial-state)))
+
+(register-handler
+  :set-username-input
+  (fn [db [_ value]]
+    (assoc db :username value)))
+
+;; -- View Components -------
+
+(defn username-input []
+  (let [username (subscribe [:username-input])]
+    [:input {:type "text"
+             :value @username
+             :on-change #(dispatch [:set-username-input (-> % .-target .-value)])}]))
+
+(defn message-form []
+  (let [message  (reagent/atom "")
+        username (subscribe [:username-input])]
+    [:form {:on-submit (fn [e]
+                         (.preventDefault e)
+                         (firebase-swap! @fb-messages conj [@username @message]))}
+     [:input {:type "text"
+              :on-change #(reset! message (-> % .-target .-value))}]
+     [:button {:type "submit"} "Send"]]))
+
+;; -- Views -----------------
 
 (defn on-going-chat []
   [:div
-   [:label "Your username:"]
-   [text-input username]
+   [:label "Your username: "]
+   [username-input]
 
    [:div#messages
     (for [[message index] (map vector (take-last 30 @messages) (range))]
       ^{:key (str "message-" index)}
       [:div [:span.username (first message) ": "] [:span.message (second message)]])]
 
-   (let [users-message (reagent/atom "")]
-     [:form {:on-submit (fn [e]
-                          (.preventDefault e)
-                          (firebase-swap! @fb-messages conj [@username @users-message]))}
-      [text-input users-message]
-      [:button {:type "submit"} "Send"]])])
+   [message-form]])
 
 (defn join-room-view []
   (let [this-room (atom (random-four-characters))
@@ -108,17 +135,15 @@
       [on-going-chat]
       [join-room-view])
 
-    (when @show-state?
-      [:div [:br] [:br] [:br] "STATE!!!!"
-       [:div "Messages: " (pr-str @messages)]])]])
+    [:div [:br] [:br] [:br]
+     "STATE!!!!"
+     [:div "Messages: " (pr-str @messages)]]]])
 
 (defn current-page []
   [:div [(session/get :current-page)]])
 
 ;; -------------------------
 ;; Routes
-
-(secretary/set-config! :prefix "#")
 
 (secretary/defroute "/" []
   (reset! chat-room nil)
@@ -132,6 +157,7 @@
 ;; -------------------------
 ;; History
 ;; must be called after routes have been defined
+
 (defn hook-browser-navigation! []
   (doto (History.)
     (events/listen
@@ -142,7 +168,11 @@
 
 ;; -------------------------
 ;; Initialize app
+
 (defn init! []
   (hook-browser-navigation!)
+  (secretary/set-config! :prefix "#")
+  (dispatch-sync [:initialize])
 
+  ;; mount root
   (reagent/render-component [current-page] (.getElementById js/document "app")))
