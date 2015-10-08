@@ -52,7 +52,7 @@
 (register-sub
   :chat-room-messages
   (fn [db _]
-    (reaction (:messages @db))))
+    (reaction (vals (:messages @db)))))
 
 ;; -- Event Handlers --------
 
@@ -75,10 +75,12 @@
   :join-chat-room
   (fn [db [_ room-id]]
     ;; listen to chat room on firebase
-    (let [id          (-> room-id (str/lower-case) (keyword))
-          fb-messages (m/get-in fb-root [id :messages])]
-      (m/listen-to fb-messages :value
-                     (fn [[_ v]] (println v) (dispatch [:room-update v]))))
+    (let [id  (-> room-id (str/lower-case) (keyword))]
+      (-> fb-root
+          (m/get-in [id :messages])
+          (m/take-last 30)
+          (m/listen-to :value
+                       (fn [[_ v]] (println v) (dispatch [:room-update v])))))
 
     ;; update current room id
     (assoc db :chat-room room-id)))
@@ -117,10 +119,9 @@
 (defn show-messages []
   (let [messages (subscribe [:chat-room-messages])]
     [:div#messages
-     (for [[[k v] index] (map vector @messages (range))]
-       (let [{:keys [username message]} v]
-         ^{:key (str "message-" index)}
-         [:div [:span.username username] ": " [:span.message message]]))]))
+     (for [[{:keys [username message]} index] (map vector @messages (range))]
+       ^{:key (str "message-" index)}
+       [:div [:span.username username] ": " [:span.message message]])]))
 
 ;; -- Views -----------------
 
