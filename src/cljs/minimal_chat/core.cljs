@@ -29,20 +29,6 @@
    :messages []
    :username (str "Guest" (rand-int 100))})
 
-(defonce fb-messages (atom nil))
-(defonce messages (reagent/atom []))
-
-;; -- Firebase helpers ------
-
-(defn bind-to-ratom [ratom ref & [korks]]
-  (let [ch (ma/listen-to< ref korks :value)]
-    (go-loop [[key val] (<! ch)]
-      (reset! ratom val)
-      (recur (<! ch)))))
-
-(defn firebase-swap! [fb-ref f & args]
-  (apply m/swap! fb-ref f args))
-
 ;; -- Helpers ---------------
 
 (defn- random-four-characters []
@@ -50,11 +36,6 @@
        (take 4)
        (str/join)
        (str/upper-case)))
-
-(defn join-room [id]
-  (let [fb-item (m/get-in fb-root [(str/lower-case id) :messages])]
-    (reset! fb-messages fb-item)
-    (bind-to-ratom messages fb-item)))
 
 ;; -- Subscriptions ---------
 
@@ -86,9 +67,20 @@
     (assoc db :username value)))
 
 (register-handler
+  :room-update
+  (fn [db [_ v]]
+    (assoc db :messages v)))
+
+(register-handler
   :join-chat-room
   (fn [db [_ room-id]]
-    (join-room room-id)
+    ;; listen to chat room on firebase
+    (let [id          (-> room-id (str/lower-case) (keyword))
+          fb-messages (m/get-in fb-root [id :messages])]
+      (m/listen-to fb-messages :value
+                     (fn [[_ v]] (println v) (dispatch [:room-update v]))))
+
+    ;; update current room id
     (assoc db :chat-room room-id)))
 
 (register-handler
@@ -123,11 +115,12 @@
      [:button {:type "submit"} "Send"]]))
 
 (defn show-messages []
-  [:div#messages
-   (for [[[k v] index] (map vector (take-last 30 @messages) (range))]
-     ^{:key (str "message-" index)}
-     (let [{:keys [username message]} v]
-       [:div [:span.username username] ": " [:span.message message]]))])
+  (let [messages (subscribe [:chat-room-messages])]
+    [:div#messages
+     (for [[[k v] index] (map vector @messages (range))]
+       (let [{:keys [username message]} v]
+         ^{:key (str "message-" index)}
+         [:div [:span.username username] ": " [:span.message message]]))]))
 
 ;; -- Views -----------------
 
