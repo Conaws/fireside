@@ -1,7 +1,8 @@
 # Minimal Chat
 
 Example project using ClojureScript, Reagent (Re-Frame) and Firebase (Matchbox)
-as the basis for creating a nearly entirely javascript based chat client.
+as the basis for creating a persistent, server-less, client-side chat client. You
+can [try it here](http://re-frame-firebase.herokuapp.com/).
 
 ## Getting Started
 
