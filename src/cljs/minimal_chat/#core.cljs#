@@ -80,8 +80,9 @@
           (m/get-in [id :messages])
           (m/take-last 30)
           (m/listen-to :value
-                       (fn [[_ v]] (println v) (dispatch [:room-update v])))))
-
+                       (fn [[_ v]]
+                         (println v)
+                         (dispatch [:room-update v])))))
     ;; update current room id
     (assoc db :chat-room room-id)))
 
